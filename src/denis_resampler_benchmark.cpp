@@ -45,59 +45,12 @@
 #include "itkGPUCastImageFilterFactory.h"
 
 // GPU transform factory includes
-#include "itkGPUAffineTransformFactory.h"
-#include "itkGPUTranslationTransformFactory.h"
 #include "itkGPUBSplineTransformFactory.h"
-#include "itkGPUEuler2DTransformFactory.h"
-#include "itkGPUEuler3DTransformFactory.h"
-#include "itkGPUSimilarity2DTransformFactory.h"
-#include "itkGPUSimilarity3DTransformFactory.h"
-#include "itkGPUCompositeTransformFactory.h"
 
 // GPU interpolate factory includes
-#include "itkGPUNearestNeighborInterpolateImageFunctionFactory.h"
-#include "itkGPULinearInterpolateImageFunctionFactory.h"
 #include "itkGPUBSplineInterpolateImageFunctionFactory.h"
 #include "itkGPUBSplineDecompositionImageFilterFactory.h"
 
-//------------------------------------------------------------------------------
-std::string
-GetHelpString( void )
-{
-  std::stringstream ss;
-
-  ss << "Usage:" << std::endl
-     << "  -in           input file name" << std::endl
-     << "  [-i]          interpolator, one of {NearestNeighbor, Linear, BSpline}, default NearestNeighbor\n"
-     << "  [-t]          transforms, one of {Affine, Translation, BSpline, Euler, Similarity}"
-     << " or combinations with option \"-c\", default Affine\n"
-     << "  [-c]          use combo transform, default false" << std::endl
-     << "  [-p]          parameter file for the B-spline transform" << std::endl
-     << "  [-out]        output file names.(outputCPU outputGPU)" << std::endl
-     << "  [-outlog]     output log file name, default 'CPUGPULog.txt'" << std::endl
-     << "  [-nooutput]   controls where output is created, default write output" << std::endl
-     << "  [-runtimes]   controls how many times filter will execute, default 1" << std::endl
-     << "  [-skipcpu]    skip running CPU part, default false" << std::endl
-     << "  [-skipgpu]    skip running GPU part, default false" << std::endl
-     << "  [-rmse]       acceptable rmse error, default 0" << std::endl
-     << "  [-threads]    number of threads, default maximum" << std::endl;
-  return ss.str();
-} // end GetHelpString()
-
-
-//------------------------------------------------------------------------------
-/** run: A macro to call a function. */
-#define run( function, ttype, etype, stype, type0, type1, dim )                                \
-  if( ComponentType == # type0 && Dimension == dim )                                           \
-  {                                                                                            \
-    typedef itk::Image< type0, dim > InputImageType;                                           \
-    typedef itk::Image< type1, dim > OutputImageType;                                          \
-    supported = true;                                                                          \
-    if( !noSupportFor1D )                                                                      \
-    {                                                                                          \
-      result = function< ttype, etype, stype, InputImageType, OutputImageType >( parameters ); \
-    }                                                                                          \
-  }
 
 //------------------------------------------------------------------------------
 namespace
@@ -205,30 +158,6 @@ GetTransformName( typename TransformType::Pointer & transform )
 }
 
 
-//------------------------------------------------------------------------------
-template< typename InputImageType >
-typename InputImageType::PointType
-ComputeCenterOfTheImage( const typename InputImageType::ConstPointer & image )
-{
-  const unsigned int Dimension = image->GetImageDimension();
-
-  const typename InputImageType::SizeType size   = image->GetLargestPossibleRegion().GetSize();
-  const typename InputImageType::IndexType index = image->GetLargestPossibleRegion().GetIndex();
-
-  typedef itk::ContinuousIndex< double, InputImageType::ImageDimension > ContinuousIndexType;
-  ContinuousIndexType centerAsContInd;
-  for( std::size_t i = 0; i < Dimension; i++ )
-  {
-    centerAsContInd[ i ]
-      = static_cast< double >( index[ i ] )
-      + static_cast< double >( size[ i ] - 1 ) / 2.0;
-  }
-
-  typename InputImageType::PointType center;
-  image->TransformContinuousIndexToPhysicalPoint( centerAsContInd, center );
-  return center;
-}
-
 
 //------------------------------------------------------------------------------
 template< typename InputImageType, typename OutputImageType >
@@ -318,64 +247,6 @@ DefineInterpolator( typename InterpolatorType::Pointer & interpolator,
 }
 
 
-//------------------------------------------------------------------------------
-template< typename AffineTransformType >
-void
-DefineAffineParameters( typename AffineTransformType::ParametersType & parameters )
-{
-  const unsigned int Dimension = AffineTransformType::InputSpaceDimension;
-
-  // Setup parameters
-  parameters.SetSize( Dimension * Dimension + Dimension );
-  std::size_t par = 0;
-  if( Dimension == 2 )
-  {
-    const double matrix[] =
-    {
-      0.9, 0.1, // matrix part
-      0.2, 1.1, // matrix part
-      0.0, 0.0, // translation
-    };
-
-    for( std::size_t i = 0; i < 6; i++ )
-    {
-      parameters[ par++ ] = matrix[ i ];
-    }
-  }
-  else if( Dimension == 3 )
-  {
-    const double matrix[] =
-    {
-      1.0, -0.045, 0.02,   // matrix part
-      0.0, 1.0, 0.0,       // matrix part
-      -0.075, 0.09, 1.0,   // matrix part
-      -3.02, 1.3, -0.045   // translation
-    };
-
-    for( std::size_t i = 0; i < 12; i++ )
-    {
-      parameters[ par++ ] = matrix[ i ];
-    }
-  }
-}
-
-
-//------------------------------------------------------------------------------
-template< typename TranslationTransformType >
-void
-DefineTranslationParameters( const std::size_t transformIndex,
-  typename TranslationTransformType::ParametersType & parameters )
-{
-  const std::size_t Dimension = TranslationTransformType::SpaceDimension;
-
-  // Setup parameters
-  parameters.SetSize( Dimension );
-  for( std::size_t i = 0; i < Dimension; i++ )
-  {
-    parameters[ i ] = (double)i * (double)transformIndex + (double)transformIndex;
-  }
-}
-
 
 //------------------------------------------------------------------------------
 template< typename BSplineTransformType >
@@ -415,146 +286,14 @@ DefineBSplineParameters( const std::size_t transformIndex,
 
 
 //------------------------------------------------------------------------------
-template< typename EulerTransformType >
-void
-DefineEulerParameters( const std::size_t transformIndex,
-  typename EulerTransformType::ParametersType & parameters )
-{
-  const std::size_t Dimension = EulerTransformType::InputSpaceDimension;
-
-  // Setup parameters
-  // 2D: angle 1, translation 2
-  // 3D: 6 angle, translation 3
-  parameters.SetSize( EulerTransformType::ParametersDimension );
-
-  // Angle
-  const double angle = (double)transformIndex * -0.05;
-
-  std::size_t par = 0;
-  if( Dimension == 2 )
-  {
-    // See implementation of Rigid2DTransform::SetParameters()
-    parameters[ 0 ] = angle;
-    ++par;
-  }
-  else if( Dimension == 3 )
-  {
-    // See implementation of Rigid3DTransform::SetParameters()
-    for( std::size_t i = 0; i < 3; i++ )
-    {
-      parameters[ par ] = angle;
-      ++par;
-    }
-  }
-
-  for( std::size_t i = 0; i < Dimension; i++ )
-  {
-    parameters[ i + par ] = (double)i * (double)transformIndex + (double)transformIndex;
-  }
-}
-
-
-//------------------------------------------------------------------------------
-template< typename SimilarityTransformType >
-void
-DefineSimilarityParameters( const std::size_t transformIndex,
-  typename SimilarityTransformType::ParametersType & parameters )
-{
-  const std::size_t Dimension = SimilarityTransformType::InputSpaceDimension;
-
-  // Setup parameters
-  // 2D: 2 translation, angle 1, scale 1
-  // 3D: 3 translation, angle 3, scale 1
-  parameters.SetSize( SimilarityTransformType::ParametersDimension );
-
-  // Scale, Angle
-  const double scale = ( (double)transformIndex + 1.0 ) * 0.05 + 1.0;
-  const double angle = (double)transformIndex * -0.06;
-
-  if( Dimension == 2 )
-  {
-    // See implementation of Similarity2DTransform::SetParameters()
-    parameters[ 0 ] = scale;
-    parameters[ 1 ] = angle;
-  }
-  else if( Dimension == 3 )
-  {
-    // See implementation of Similarity3DTransform::SetParameters()
-    for( std::size_t i = 0; i < Dimension; i++ )
-    {
-      parameters[ i ] = angle;
-    }
-    parameters[ 6 ] = scale;
-  }
-
-  // Translation
-  for( std::size_t i = 0; i < Dimension; i++ )
-  {
-    parameters[ i + Dimension ] = -1.0 * ( (double)i * (double)transformIndex + (double)transformIndex );
-  }
-}
-
-
-//------------------------------------------------------------------------------
-// This helper function completely set the transform
-// We are using ITK transforms:
-// TransformType, AffineTransformType, TranslationTransformType
-// BSplineTransformType, EulerTransformType, SimilarityTransformType,
-// CompositeTransform
-template< typename TransformType, typename AffineTransformType,
-typename TranslationTransformType, typename BSplineTransformType,
-typename EulerTransformType, typename SimilarityTransformType,
-typename CompositeTransformType, typename InputImageType >
+template<typename TransformType, typename BSplineTransformType, typename InputImageType>
 void
 SetTransform( const std::size_t transformIndex,
-  const std::string & transformName,
   typename TransformType::Pointer & transform,
-  typename CompositeTransformType::Pointer & compositeTransform,
   const typename InputImageType::ConstPointer & image,
   std::vector< typename BSplineTransformType::ParametersType > & bsplineParameters,
   const std::string & parametersFileName )
 {
-  if( transformName == "Affine" )
-  {
-    // Create Affine transform
-    typename AffineTransformType::Pointer affineTransform
-      = AffineTransformType::New();
-
-    // Define and set affine parameters
-    typename AffineTransformType::ParametersType parameters;
-    DefineAffineParameters< AffineTransformType >( parameters );
-    affineTransform->SetParameters( parameters );
-    if( compositeTransform.IsNull() )
-    {
-      transform = affineTransform;
-    }
-    else
-    {
-      compositeTransform->AddTransform( affineTransform );
-    }
-  }
-  else if( transformName == "Translation" )
-  {
-    // Create Translation transform
-    typename TranslationTransformType::Pointer translationTransform
-      = TranslationTransformType::New();
-
-    // Define and set translation parameters
-    typename TranslationTransformType::ParametersType parameters;
-    DefineTranslationParameters< TranslationTransformType >
-      ( transformIndex, parameters );
-    translationTransform->SetParameters( parameters );
-    if( compositeTransform.IsNull() )
-    {
-      transform = translationTransform;
-    }
-    else
-    {
-      compositeTransform->AddTransform( translationTransform );
-    }
-  }
-  else if( transformName == "BSpline" )
-  {
     const unsigned int Dimension = image->GetImageDimension();
     const typename InputImageType::SpacingType inputSpacing     = image->GetSpacing();
     const typename InputImageType::PointType inputOrigin        = image->GetOrigin();
@@ -594,138 +333,15 @@ SetTransform( const std::size_t transformIndex,
     // Do not set parameters, the will be destroyed going out of scope
     // instead, set the ones from the bsplineParameters
     bsplineTransform->SetParameters( bsplineParameters[ indexAt ] );
-    if( compositeTransform.IsNull() )
-    {
-      transform = bsplineTransform;
-    }
-    else
-    {
-      compositeTransform->AddTransform( bsplineTransform );
-    }
-  }
-  else if( transformName == "Euler" )
-  {
-    // Create Euler transform
-    typename EulerTransformType::Pointer eulerTransform
-      = EulerTransformType::New();
-
-    // Compute and set center
-    const typename InputImageType::PointType center
-      = ComputeCenterOfTheImage< InputImageType >( image );
-    eulerTransform->SetCenter( center );
-
-    // Define and set euler parameters
-    typename EulerTransformType::ParametersType parameters;
-    DefineEulerParameters< EulerTransformType >
-      ( transformIndex, parameters );
-    eulerTransform->SetParameters( parameters );
-    if( compositeTransform.IsNull() )
-    {
-      transform = eulerTransform;
-    }
-    else
-    {
-      compositeTransform->AddTransform( eulerTransform );
-    }
-  }
-  else if( transformName == "Similarity" )
-  {
-    // Create Similarity transform
-    typename SimilarityTransformType::Pointer similarityTransform
-      = SimilarityTransformType::New();
-
-    // Compute and set center
-    const typename InputImageType::PointType center
-      = ComputeCenterOfTheImage< InputImageType >( image );
-    similarityTransform->SetCenter( center );
-
-    // Define and set similarity parameters
-    typename SimilarityTransformType::ParametersType parameters;
-    DefineSimilarityParameters< SimilarityTransformType >
-      ( transformIndex, parameters );
-    similarityTransform->SetParameters( parameters );
-    if( compositeTransform.IsNull() )
-    {
-      transform = similarityTransform;
-    }
-    else
-    {
-      compositeTransform->AddTransform( similarityTransform );
-    }
-  }
+    transform = bsplineTransform;
 }
 
 
 //------------------------------------------------------------------------------
-// This helper function completely set the transform
-// We are using ITK transforms:
-// TransformType, AffineTransformType, TranslationTransformType
-// BSplineTransformType, EulerTransformType, SimilarityTransformType,
-// CompositeTransform
-template< typename TransformType, typename AffineTransformType,
-typename TranslationTransformType, typename BSplineTransformType,
-typename EulerTransformType, typename SimilarityTransformType,
-typename CompositeTransformType, typename InputImageType >
-void
-DefineTransform( typename TransformType::Pointer & transform,
-  const Parameters & parameters,
-  std::vector< typename BSplineTransformType::ParametersType > & bsplineParameters,
-  const typename InputImageType::ConstPointer & image )
-{
-  if( !parameters.useComboTransform )
-  {
-    typename CompositeTransformType::Pointer dummy;
-    SetTransform<
-    TransformType, AffineTransformType, TranslationTransformType,
-    BSplineTransformType, EulerTransformType, SimilarityTransformType,
-    CompositeTransformType, InputImageType >
-      ( 0, parameters.transforms[ 0 ], transform, dummy,
-      image, bsplineParameters, parameters.parametersFileName );
-  }
-  else
-  {
-    typename CompositeTransformType::Pointer compositeTransform
-              = CompositeTransformType::New();
-    transform = compositeTransform;
-
-    for( std::size_t i = 0; i < parameters.transforms.size(); i++ )
-    {
-      SetTransform<
-      TransformType, AffineTransformType, TranslationTransformType,
-      BSplineTransformType, EulerTransformType, SimilarityTransformType,
-      CompositeTransformType, InputImageType >
-        ( i, parameters.transforms[ i ], transform, compositeTransform,
-        image, bsplineParameters, parameters.parametersFileName );
-    }
-  }
-}
-
+template<typename TransformPrecisionType, class InputImageType, typename OutputImageType>
+int ProcessImage(const Parameters & _parameters);
 
 //------------------------------------------------------------------------------
-template< typename TransformPrecisionType, typename EulerTransformType, typename SimilarityTransformType,
-class InputImageType, typename OutputImageType >
-int ProcessImage( const Parameters & _parameters );
-
-//------------------------------------------------------------------------------
-// This test compares the CPU with the GPU version of the ResampleImageFilter.
-// The filter takes an input image and produces an output image.
-// We compare the CPU and GPU output image using RMSE and speed.
-//
-// The following ITK interpolations are supported:
-// itk::NearestNeighborInterpolateImageFunction
-// itk::LinearInterpolateImageFunction
-// itk::BSplineInterpolateImageFunction
-//
-// The following ITK transforms are supported:
-// itk::CompositeTransform
-// itk::AffineTransform
-// itk::BSplineTransform
-// itk::Euler2DTransform
-// itk::Euler3DTransform
-// itk::Similarity2DTransform
-// itk::Similarity3DTransform
-// itk::TranslationTransform
-//
 int
 main( int argc, char * argv[] )
 {
@@ -781,78 +397,22 @@ main( int argc, char * argv[] )
     NumberOfComponents,
     imagesize );
 
-  if( retgip != 0 )
-  {
-    itk::ReleaseContext();
-    return EXIT_FAILURE;
-  }
-
-  // Check for transforms that support only 2D/3D not 1D
-  bool noSupportFor1D = false;
-  if( Dimension == 1 )
-  {
-    for( std::size_t i = 0; i < parameters.transforms.size(); i++ )
-    {
-      const std::string transformName = parameters.transforms[ i ];
-      if( transformName == "Euler" || transformName == "Similarity" )
-      {
-        noSupportFor1D = true;
-        break;
-      }
-    }
-  }
-
-  // Let the user overrule this
-  if( NumberOfComponents > 1 )
-  {
-    std::cerr << "ERROR: The NumberOfComponents is larger than 1!" << std::endl;
-    std::cerr << "Vector images are not supported!" << std::endl;
-    itk::ReleaseContext();
-    return EXIT_FAILURE;
-  }
-
   // Get rid of the possible "_" in ComponentType.
   ReplaceUnderscoreWithSpace( ComponentType );
 
   typedef float TransformPrecisionType;
 
-  // Dummy Euler1DTransformType and Similarity1DTransformType for compiler
-  typedef itk::MatrixOffsetTransformBase< TransformPrecisionType, 1, 1 > Euler1DTransformType;
-  typedef itk::MatrixOffsetTransformBase< TransformPrecisionType, 1, 1 > Similarity1DTransformType;
-
-  // Typedefs for Euler2D/3D Similarity2D/3D
-  typedef itk::Euler2DTransform< TransformPrecisionType >      Euler2DTransformType;
-  typedef itk::Similarity2DTransform< TransformPrecisionType > Similarity2DTransformType;
-  typedef itk::Euler3DTransform< TransformPrecisionType >      Euler3DTransformType;
-  typedef itk::Similarity3DTransform< TransformPrecisionType > Similarity3DTransformType;
-
   // Run the program.
-  bool supported = false;
   int  result    = EXIT_SUCCESS;
   try
   {
-    // 1D
-    run( ProcessImage, TransformPrecisionType, Euler1DTransformType, Similarity1DTransformType, short, short, 1 );
-
-    // 2D
-    run( ProcessImage, TransformPrecisionType, Euler2DTransformType, Similarity2DTransformType, short, short, 2 );
-
     // 3D
-    run( ProcessImage, TransformPrecisionType, Euler3DTransformType, Similarity3DTransformType, short, short, 3 );
+    typedef itk::Image< short, 3> ImageType;                                          
+    result = ProcessImage<TransformPrecisionType, ImageType, ImageType>(parameters); 
   }
   catch( itk::ExceptionObject & e )
   {
     std::cerr << "Caught ITK exception: " << e << std::endl;
-    itk::ReleaseContext();
-    result = EXIT_FAILURE;
-  }
-  if( !supported )
-  {
-    std::cerr << "ERROR: this combination of pixeltype and dimension is not supported!" << std::endl;
-    std::cerr
-      << "pixel (component) type = " << ComponentType
-      << " ; dimension = " << Dimension
-      << std::endl;
     itk::ReleaseContext();
     result = EXIT_FAILURE;
   }
@@ -863,10 +423,8 @@ main( int argc, char * argv[] )
 
 
 //------------------------------------------------------------------------------
-template< typename TransformPrecisionType, typename EulerTransformType, typename SimilarityTransformType,
-class InputImageType, typename OutputImageType >
-int
-ProcessImage( const Parameters & _parameters )
+template<typename TransformPrecisionType, class InputImageType, typename OutputImageType>
+int ProcessImage(const Parameters & _parameters)
 {
   // Images Typedefs
   const unsigned int ImageDim = (unsigned int)InputImageType::ImageDimension;
@@ -885,10 +443,7 @@ ProcessImage( const Parameters & _parameters )
 
   // Transform typedefs
   typedef itk::Transform< TransformPrecisionType, ImageDim, ImageDim >  CPUTransformType;
-  typedef itk::AffineTransform< TransformPrecisionType, ImageDim >      AffineTransformType;
-  typedef itk::TranslationTransform< TransformPrecisionType, ImageDim > TranslationTransformType;
   typedef itk::BSplineTransform< TransformPrecisionType, ImageDim, 3 >  BSplineTransformType;
-  typedef itk::CompositeTransform< TransformPrecisionType, ImageDim >   CompositeTransformType;
 
   typedef itk::Transform< GPUTransformPrecisionType, ImageDim, ImageDim > GPUTransformType;
 
@@ -914,9 +469,6 @@ ProcessImage( const Parameters & _parameters )
     = itk::NumericTraits< typename OutputImageType::PixelType >::Zero;
 
   // Transform copiers
-  typedef itk::GPUCompositeTransformCopier< OCLImageTypes, OCLImageDims, CompositeTransformType,
-    GPUTransformPrecisionType >
-    CompositeTransformCopierType;
   typedef itk::GPUTransformCopier< OCLImageTypes, OCLImageDims, CPUTransformType, GPUTransformPrecisionType >
     TransformCopierType;
 
@@ -979,16 +531,14 @@ ProcessImage( const Parameters & _parameters )
     // Construct, select and setup transform
     if( !updateExceptionCPU )
     {
-      DefineTransform< CPUTransformType, AffineTransformType, TranslationTransformType,
-      BSplineTransformType, EulerTransformType, SimilarityTransformType,
-      CompositeTransformType, InputImageType >
-        ( CPUTransform, _parameters, bsplineParameters, inputImage );
+      SetTransform<CPUTransformType, BSplineTransformType, InputImageType>
+        (0, CPUTransform, inputImage, bsplineParameters, _parameters.parametersFileName);
     }
 
     // Create CPU interpolator here
-    DefineInterpolator< CPUInterpolatorType >(
+    DefineInterpolator<CPUInterpolatorType>(
       CPUInterpolator, _parameters.interpolator,
-      _parameters.splineOrderInterpolator, updateExceptionCPU );
+      _parameters.splineOrderInterpolator, updateExceptionCPU);
 
     // Print info
     if( !updateExceptionCPU )
@@ -1071,26 +621,14 @@ ProcessImage( const Parameters & _parameters )
     ::RegisterOneFactory();
 
     // Transforms factory registration
-    itk::GPUAffineTransformFactory2< OCLImageDims >::RegisterOneFactory();
-    itk::GPUTranslationTransformFactory2< OCLImageDims >::RegisterOneFactory();
     itk::GPUBSplineTransformFactory2< OCLImageDims >::RegisterOneFactory();
-    itk::GPUEuler2DTransformFactory2< OCLImageDims >::RegisterOneFactory();
-    itk::GPUEuler3DTransformFactory2< OCLImageDims >::RegisterOneFactory();
-    itk::GPUSimilarity2DTransformFactory2< OCLImageDims >::RegisterOneFactory();
-    itk::GPUSimilarity3DTransformFactory2< OCLImageDims >::RegisterOneFactory();
 
-    // Composite transform factory registration
-    itk::GPUCompositeTransformFactory2< OCLImageDims >::RegisterOneFactory();
 
     // Interpolators factory registration
-    itk::GPUNearestNeighborInterpolateImageFunctionFactory2< OCLImageTypes, OCLImageDims >
-    ::RegisterOneFactory();
-    itk::GPULinearInterpolateImageFunctionFactory2< OCLImageTypes, OCLImageDims >
-    ::RegisterOneFactory();
     itk::GPUBSplineInterpolateImageFunctionFactory2< OCLImageTypes, OCLImageDims >
     ::RegisterOneFactory();
     itk::GPUBSplineDecompositionImageFilterFactory2< OCLImageTypes, OCLImageTypes, OCLImageDims >
-    ::RegisterOneFactory();
+      ::RegisterOneFactory();
 
     GPUReader = ReaderType::New();
     GPUReader->SetFileName( _parameters.inputFileName );
@@ -1143,59 +681,25 @@ ProcessImage( const Parameters & _parameters )
       // if skipCPU was used then create CPU transform the same way as in CPU case.
       if( _parameters.skipCPU && CPUTransform.IsNull() )
       {
-        DefineTransform< CPUTransformType, AffineTransformType, TranslationTransformType,
-        BSplineTransformType, EulerTransformType, SimilarityTransformType,
-        CompositeTransformType, InputImageType >
-          ( CPUTransform, _parameters, bsplineParameters, inputImage );
+        SetTransform<CPUTransformType, BSplineTransformType, InputImageType >
+          ( 0, CPUTransform, inputImage, bsplineParameters, _parameters.parametersFileName );
       }
 
       // Copy CPU transform to GPU using copiers
-      if( !_parameters.useComboTransform )
+      typename TransformCopierType::Pointer copier = TransformCopierType::New();
+      copier->SetInputTransform( CPUTransform );
+      copier->SetExplicitMode( false );
+      try
       {
-        typename TransformCopierType::Pointer copier = TransformCopierType::New();
-        copier->SetInputTransform( CPUTransform );
-        copier->SetExplicitMode( false );
-        try
-        {
-          copier->Update();
-        }
-        catch( itk::ExceptionObject & e )
-        {
-          std::cerr << "Caught ITK exception during copier->Update(): " << e << std::endl;
-          itk::ReleaseContext();
-          return EXIT_FAILURE;
-        }
-        GPUTransform = copier->GetModifiableOutput();
+        copier->Update();
       }
-      else
+      catch( itk::ExceptionObject & e )
       {
-        // Get CPU CompositeTransformType
-        CompositeTransformType * CPUCompositeTransform
-          = dynamic_cast< CompositeTransformType * >( CPUTransform.GetPointer() );
-        if( CPUCompositeTransform )
-        {
-          typename CompositeTransformCopierType::Pointer compositeCopier = CompositeTransformCopierType::New();
-          compositeCopier->SetInputTransform( CPUCompositeTransform );
-          compositeCopier->SetExplicitMode( false );
-          try
-          {
-            compositeCopier->Update();
-          }
-          catch( itk::ExceptionObject & e )
-          {
-            std::cerr << "Caught ITK exception during compositeCopier->Update(): " << e << std::endl;
-            itk::ReleaseContext();
-            return EXIT_FAILURE;
-          }
-          GPUTransform = compositeCopier->GetModifiableOutput();
-        }
-        else
-        {
-          std::cerr << "ERROR: Unable to retrieve CPU CompositeTransform." << std::endl;
-          itk::ReleaseContext();
-          return EXIT_FAILURE;
-        }
+        std::cerr << "Caught ITK exception during copier->Update(): " << e << std::endl;
+        itk::ReleaseContext();
+        return EXIT_FAILURE;
       }
+      GPUTransform = copier->GetModifiableOutput();
     }
 
     // Create GPU copy for interpolator here
