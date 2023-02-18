@@ -7,6 +7,10 @@
 #include "itkBSplineInterpolateImageFunction.h"
 #include "itkResampleImageFilter.h"
 
+// Transformix
+#include "itkTransformixFilter.h"
+#include "elxParameterObject.h"
+
 // GPU
 #include "itkGPUResampleImageFilter.h"
 
@@ -131,21 +135,25 @@ int main()
 
     // Setup BSplines transform
     const std::string parametersFileName = "./data/BSplineDisplacements.txt";
-    using BSplineTransformType = itk::BSplineTransform< float, ImageDim, 3>;
+    //using TransformPrecisionType = float;
+    using TransformPrecisionType = double;
+    using BSplineTransformType = itk::BSplineTransform<TransformPrecisionType, ImageDim, 3>;
     BSplineTransformType::Pointer bsplineTransform = 
         CreateTransform< BSplineTransformType, ImageType >(0, image, parametersFileName);
 
     // Setup the interpolator
+    //using TransformType = itk::Transform<float, ImageDim, ImageDim>;
+    using InterpolatorPrecisionType = double;
     using BSplineInterpolatorType = itk::BSplineInterpolateImageFunction<
-        ImageType, float, float>;
-    BSplineInterpolatorType::Pointer bsplineInterpolator = BSplineInterpolatorType::New();
+        ImageType, InterpolatorPrecisionType, InterpolatorPrecisionType>;
+    const BSplineInterpolatorType::Pointer bsplineInterpolator = BSplineInterpolatorType::New();
     bsplineInterpolator->SetSplineOrder(3);
 
     // std::cout << bsplineTransform->GetParameters();
     // Create Resampler
     itk::TimeProbe cputimer;
     cputimer.Start();
-    using ResamplerType = itk::ResampleImageFilter<ImageType, ImageType, float>;
+    using ResamplerType = itk::ResampleImageFilter<ImageType, ImageType, TransformPrecisionType, InterpolatorPrecisionType>;
     ResamplerType::Pointer CPUResampler = ResamplerType::New();
     //unsigned int maximumNumberOfThreads = itk::MultiThreaderBase::GetGlobalDefaultNumberOfThreads();
     //itk::MultiThreaderBase::SetGlobalMaximumNumberOfThreads(maximumNumberOfThreads);
@@ -161,6 +169,51 @@ int main()
 
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // CPU Transformix
+    using ParameterMapType = itk::ParameterFileParser::ParameterMapType;
+    using ParameterValuesType = itk::ParameterFileParser::ParameterValuesType;
+    using ParameterMapVectorType = elx::ParameterObject::ParameterMapVectorType; 
+    elx::ParameterObject::Pointer parameter_object = elx::ParameterObject::New();
+    std::cout << bsplineTransform->GetNumberOfParameters() << std::endl;
+
+    parameter_object->AddParameterMap({
+                                      // {"Direction", "1 0 0 0 1 0 0 0 1"}, // Doesn't work
+                                       // {"Spacing", ParameterValuesType(3, "1")} // this works
+                                       {"Spacing", {"0.660156", "0.660156", "1.5"}},
+                                       {"Size", {"512", "512", "256"}},
+                                       {"Index", {"0", "0", "0"}},
+                                       {"Origin", {"-157.67", "-362.67", "-1198.6"}},
+                                       {"HowToCombineTransforms", {"Compose"}},
+                                       {"InitialTransformParametersFileName", {"NoInitialTransform"}},
+                                       {"Direction", {"1", "0", "0", "0", "1", "0", "0", "0", "1"}},
+                                      });
+
+
+    using TransformixFilterType = itk::TransformixFilter<ImageType>;
+    TransformixFilterType::Pointer transformixFilter = TransformixFilterType::New();
+    transformixFilter->SetMovingImage(image);
+    transformixFilter->SetTransform(bsplineTransform);
+    transformixFilter->SetTransformParameterObject(parameter_object);
+    transformixFilter->SetLogToConsole(false);
+    transformixFilter->SetOutputDirectory("./");
+
+    itk::TimeProbe cputimertransformix;
+    cputimertransformix.Start();
+    try
+    {
+        transformixFilter->Update();
+    }
+    catch (itk::ExceptionObject& e)
+    {
+        std::cerr << "Caught ITK exception during copier->Update(): " << e << std::endl;
+        itk::ReleaseContext();
+        return EXIT_FAILURE;
+    }
+    cputimertransformix.Stop();
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // GPU Factories
     using OCLImageTypes = typelist::MakeTypeList<float>::Type;
     itk::GPUImageFactory2<OCLImageTypes, OCLImageDims>::RegisterOneFactory();
@@ -170,9 +223,12 @@ int main()
     itk::GPUBSplineDecompositionImageFilterFactory2<OCLImageTypes, OCLImageTypes, OCLImageDims>::RegisterOneFactory();
 
     // GPU Transform
-    using GPUTransformType = itk::Transform<float, ImageDim, ImageDim>;
-    BSplineTransformType::Pointer gpuBsplineTransform = BSplineTransformType::New();
-    using TransformCopierType = itk::GPUTransformCopier<OCLImageTypes, OCLImageDims, BSplineTransformType, float>;
+    using GPUTransformPrecisionType = float;
+    using GPUInterpolatorPrecisionType = float;
+    using GPUTransformType = itk::Transform<GPUTransformPrecisionType, ImageDim, ImageDim>;
+    //BSplineTransformType::Pointer gpuBsplineTransform = BSplineTransformType::New();
+    //using TransformCopierType = itk::GPUTransformCopier<OCLImageTypes, OCLImageDims, BSplineTransformType, float>;
+    using TransformCopierType = itk::GPUTransformCopier<OCLImageTypes, OCLImageDims, BSplineTransformType, GPUTransformPrecisionType>;
     TransformCopierType::Pointer transformCopier = TransformCopierType::New();
     transformCopier->SetInputTransform(bsplineTransform);
     transformCopier->SetExplicitMode(false);
@@ -187,9 +243,9 @@ int main()
         return EXIT_FAILURE;
     }
     GPUTransformType::Pointer GPUTransform = transformCopier->GetModifiableOutput();
-
+    
     // GPU Interpolator
-    using InterpolateCopierType = itk::GPUInterpolatorCopier< OCLImageTypes, OCLImageDims, BSplineInterpolatorType, float>;
+    using InterpolateCopierType = itk::GPUInterpolatorCopier< OCLImageTypes, OCLImageDims, BSplineInterpolatorType, GPUInterpolatorPrecisionType>;
     InterpolateCopierType::Pointer interpolateCopier = InterpolateCopierType::New();
     interpolateCopier->SetInputInterpolator(bsplineInterpolator);
     interpolateCopier->SetExplicitMode(false);
@@ -203,17 +259,19 @@ int main()
         itk::ReleaseContext();
         return EXIT_FAILURE;
     }
-    using GPUInterpolatorType = itk::InterpolateImageFunction<ImageType, float>;
+    using GPUInterpolatorType = itk::InterpolateImageFunction<ImageType, GPUInterpolatorPrecisionType>;
     GPUInterpolatorType::Pointer GPUInterpolator = interpolateCopier->GetModifiableOutput();
-
 
     // GPU Resampler
     ImageType::Pointer gpuImage = itk::ReadImage<ImageType>(image_filepath);
-    ResamplerType::Pointer GPUResampler = ResamplerType::New();
+    using GPUResamplerType = itk::ResampleImageFilter<ImageType, ImageType, GPUTransformPrecisionType, GPUInterpolatorPrecisionType>;
+    GPUResamplerType::Pointer GPUResampler = GPUResamplerType::New();
     GPUResampler->SetInput(gpuImage);
     GPUResampler->SetTransform(GPUTransform);
     GPUResampler->SetInterpolator(GPUInterpolator);
     GPUResampler->SetOutputParametersFromImage(image);
+
+    std::cout << "Reached here" << std::endl;
 
     itk::TimeProbe gputimer;
     gputimer.Start();
@@ -230,19 +288,63 @@ int main()
     gputimer.Stop();
 
 
+
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // GPU Transformix
+    elx::ParameterObject::Pointer gpu_parameter_object = elx::ParameterObject::New();
+    gpu_parameter_object->AddParameterMap({
+         {"Spacing", {"0.660156", "0.660156", "1.5"}},
+         {"Size", {"512", "512", "256"}},
+         {"Index", {"0", "0", "0"}},
+         {"Origin", {"-157.67", "-362.67", "-1198.6"}},
+         {"HowToCombineTransforms", {"Compose"}},
+         {"InitialTransformParametersFileName", {"NoInitialTransform"}},
+         {"Direction", {"1", "0", "0", "0", "1", "0", "0", "0", "1"}},
+         {"Resampler", {"OpenCLResampler"}},
+        });
+
+    TransformixFilterType::Pointer gpuTransformixFilter = TransformixFilterType::New();
+    gpuTransformixFilter->SetMovingImage(image);
+    gpuTransformixFilter->SetTransform(bsplineTransform);
+    gpuTransformixFilter->SetTransformParameterObject(gpu_parameter_object);
+    gpuTransformixFilter->SetLogToConsole(false);
+    gpuTransformixFilter->SetOutputDirectory("./");
+    itk::TimeProbe gputimertransformix;
+    gputimertransformix.Start();
+    try
+    {
+        gpuTransformixFilter->Update();
+    }
+    catch (itk::ExceptionObject& e)
+    {
+        std::cerr << "Caught ITK exception during copier->Update(): " << e << std::endl;
+        itk::ReleaseContext();
+        return EXIT_FAILURE;
+    }
+    gputimertransformix.Stop();
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
     std::cout << "CPU Resampler: " << cputimer.GetMean() << std::endl;
+    std::cout << "CPU Transformix: " << cputimertransformix.GetMean() << std::endl;
     std::cout << "GPU Resampler: " << gputimer.GetMean() << std::endl;
+    std::cout << "GPU Transformix: " << gputimertransformix.GetMean() << std::endl;
 
     // Compare CPU and GPU images
     auto cpuresult = CPUResampler->GetOutput();
     auto gpuresult = GPUResampler->GetOutput();
+    auto cpuresult_transformix = transformixFilter->GetOutput();
+    auto gpuresult_transformix = gpuTransformixFilter->GetOutput();
     float rmse = 0.0;
     float rmsRelative = 0.0;
 
     rmse = itk::ComputeRMSE<float, ImageType, ImageType>(cpuresult, gpuresult, rmsRelative);
     std::cout << "RMSE: " << rmse << " RMSRelative: " << rmsRelative << std::endl;
 
-    rmse = itk::ComputeRMSE<float, ImageType, ImageType>(cpuresult, image, rmsRelative);
+    rmse = itk::ComputeRMSE<float, ImageType, ImageType>(cpuresult, cpuresult_transformix, rmsRelative);
+    std::cout << "RMSE: " << rmse << " RMSRelative: " << rmsRelative << std::endl;
+
+    rmse = itk::ComputeRMSE<float, ImageType, ImageType>(gpuresult_transformix, cpuresult_transformix, rmsRelative);
     std::cout << "RMSE: " << rmse << " RMSRelative: " << rmsRelative << std::endl;
 
     rmse = itk::ComputeRMSE<float, ImageType, ImageType>(image, gpuresult, rmsRelative);
