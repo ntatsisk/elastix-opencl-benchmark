@@ -15,6 +15,7 @@
 #include "itkGPUResampleImageFilterFactory.h"
 #include "itkGPUBSplineTransformFactory.h"
 #include "itkGPUBSplineInterpolateImageFunctionFactory.h"
+#include "itkGPUBSplineDecompositionImageFilterFactory.h"
 
 // GPU Copiers
 #include "itkGPUTransformCopier.h"
@@ -166,6 +167,7 @@ int main()
     itk::GPUResampleImageFilterFactory2<OCLImageTypes, OCLImageTypes, OCLImageDims>::RegisterOneFactory();
     itk::GPUBSplineTransformFactory2< OCLImageDims >::RegisterOneFactory();
     itk::GPUBSplineInterpolateImageFunctionFactory2<OCLImageTypes, OCLImageDims>::RegisterOneFactory();
+    itk::GPUBSplineDecompositionImageFilterFactory2<OCLImageTypes, OCLImageTypes, OCLImageDims>::RegisterOneFactory();
 
     // GPU Transform
     using GPUTransformType = itk::Transform<float, ImageDim, ImageDim>;
