@@ -165,9 +165,7 @@ endmacro()
 # #################################################
 # Macro that defines resample affine transform test
 # #################################################
-macro( ADD_GPU_RESAMPLE_TEST interpolator transform combo RMSEs )
-
-  set( TEST_EXE itkGPUResampleImageFilterTest )
+macro( ADD_GPU_RESAMPLE_TEST TEST_EXE interpolator transform combo RMSEs )
 
   # Extra parameters variable
   set( extra_parameters ${skip_parameters} )
@@ -200,7 +198,7 @@ macro( ADD_GPU_RESAMPLE_TEST interpolator transform combo RMSEs )
   foreach( elem ${transform} )
     set( test_base_name1 ${test_base_name1}${elem} )
   endforeach()
-  set( test_base_name GPUResampleImageFilterTest-${test_base_name1} )
+  set( test_base_name ${TEST_EXE}-${test_base_name1} )
 
   # Add all requested tests
   set( listOfTests 1D 2D 3D_SMALL 3D_UNEVEN 3D_MEDIUM 3D_BIG )
@@ -225,7 +223,7 @@ macro( ADD_GPU_RESAMPLE_TEST interpolator transform combo RMSEs )
 
     # Add the test
     if( ITK4OpenCL_TEST_${test} AND NOT ${only2d3dtransform} )
-      add_test( ${test_base_name}-${test} ${TEST_EXE} -in ${data_in} -out ${data_OUT_CPU} ${data_OUT_GPU} ${write_output}
+      add_test( ${test_base_name}-${test} itk${TEST_EXE} -in ${data_in} -out ${data_OUT_CPU} ${data_OUT_GPU} ${write_output}
         -i ${interpolator} -t ${transform} ${extra_parameters} -rmse ${rmse} )
       set_tests_properties( ${test_base_name}-${test} PROPERTIES RUN_SERIAL true )
     endif()
@@ -443,47 +441,49 @@ endforeach()
 
 
 # #################################################
-# ResampleImageFilter tests
+# ResampleImageFilter and TransformixFilter tests
 # #################################################
-ADD_GPU_TEST_EXECUTABLE( GPUResampleImageFilterTest )
+set(RESAMPLE_TEST_NAMES GPUResampleImageFilterTest GPUTransformixFilterTest) 
+foreach(TEST_NAME ${RESAMPLE_TEST_NAMES})
+    ADD_GPU_TEST_EXECUTABLE( ${TEST_NAME} )
 
-# Translation transform tests
-ADD_GPU_RESAMPLE_TEST( NearestNeighbor Translation FALSE "2.0;3.1;41.0;0.0;29.0;0.0" )
-ADD_GPU_RESAMPLE_TEST( Linear Translation FALSE "0.3;0.2;0.1;0.1;0.2;0.2" )
-ADD_GPU_RESAMPLE_TEST( BSpline Translation FALSE "0.0;0.1;0.2;0.1;0.2;0.5" )
+    # Translation transform tests
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} NearestNeighbor Translation FALSE "2.0;3.1;41.0;0.0;29.0;0.0" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} Linear Translation FALSE "0.3;0.2;0.1;0.1;0.2;0.2" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} BSpline Translation FALSE "0.0;0.1;0.2;0.1;0.2;0.5" )
 
-# Affine transform tests
-ADD_GPU_RESAMPLE_TEST( NearestNeighbor Affine FALSE "2.0;1.8;1.2;4.0;3.0;8.0" )
-ADD_GPU_RESAMPLE_TEST( Linear Affine FALSE "0.3;0.8;0.1;0.1;0.2;0.7" )
-ADD_GPU_RESAMPLE_TEST( BSpline Affine FALSE "0.0;0.8;0.2;0.1;0.3;0.8" )
+    # Affine transform tests
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} NearestNeighbor Affine FALSE "2.0;1.8;1.2;4.0;3.0;8.0" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} Linear Affine FALSE "0.3;0.8;0.1;0.1;0.2;0.7" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} BSpline Affine FALSE "0.0;0.8;0.2;0.1;0.3;0.8" )
 
-# BSpline transform tests
-ADD_GPU_RESAMPLE_TEST( NearestNeighbor BSpline FALSE "0.0;0.2;0.5;0.4;0.6;0.6" )
-ADD_GPU_RESAMPLE_TEST( Linear BSpline FALSE "0.0;0.0;0.1;0.1;0.1;0.1" )
-ADD_GPU_RESAMPLE_TEST( BSpline BSpline FALSE "0.0;0.01;0.2;0.1;0.2;0.1" )
+    # BSpline transform tests
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} NearestNeighbor BSpline FALSE "0.0;0.2;0.5;0.4;0.6;0.6" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} Linear BSpline FALSE "0.0;0.0;0.1;0.1;0.1;0.1" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} BSpline BSpline FALSE "0.0;0.01;0.2;0.1;0.2;0.1" )
 
-# Combo with single transform
-ADD_GPU_RESAMPLE_TEST( NearestNeighbor Translation TRUE "2.0;3.1;41.0;0.0;29.0;0.0" )
-ADD_GPU_RESAMPLE_TEST( Linear Translation TRUE "0.3;0.2;0.1;0.1;0.2;0.2" )
-ADD_GPU_RESAMPLE_TEST( BSpline Translation TRUE "0.0;0.1;0.2;0.1;0.3;0.3" )
+    # Combo with single transform
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} NearestNeighbor Translation TRUE "2.0;3.1;41.0;0.0;29.0;0.0" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} Linear Translation TRUE "0.3;0.2;0.1;0.1;0.2;0.2" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} BSpline Translation TRUE "0.0;0.1;0.2;0.1;0.3;0.3" )
 
-ADD_GPU_RESAMPLE_TEST( NearestNeighbor Affine TRUE "0.0;1.8;1.3;4.0;3.0;8.0" )
-ADD_GPU_RESAMPLE_TEST( Linear Affine TRUE "0.0;0.1;0.1;0.1;0.2;0.7" )
-ADD_GPU_RESAMPLE_TEST( BSpline Affine TRUE "0.0;0.1;0.2;0.1;0.3;0.8" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} NearestNeighbor Affine TRUE "0.0;1.8;1.3;4.0;3.0;8.0" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} Linear Affine TRUE "0.0;0.1;0.1;0.1;0.2;0.7" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} BSpline Affine TRUE "0.0;0.1;0.2;0.1;0.3;0.8" )
 
-ADD_GPU_RESAMPLE_TEST( NearestNeighbor BSpline TRUE "0.0;0.2;0.5;0.4;0.7;0.7" )
-ADD_GPU_RESAMPLE_TEST( Linear BSpline TRUE "0.0;0.0;0.1;0.1;0.1;0.1" )
-ADD_GPU_RESAMPLE_TEST( BSpline BSpline TRUE "0.0;0.01;0.2;0.1;0.2;0.1" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} NearestNeighbor BSpline TRUE "0.0;0.2;0.5;0.4;0.7;0.7" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} Linear BSpline TRUE "0.0;0.0;0.1;0.1;0.1;0.1" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} BSpline BSpline TRUE "0.0;0.01;0.2;0.1;0.2;0.1" )
 
-# Combo with multiple transforms
-ADD_GPU_RESAMPLE_TEST( NearestNeighbor "Affine;BSpline" TRUE "0.0;0.0;0.1;0.3;0.4;0.7" )
-ADD_GPU_RESAMPLE_TEST( Linear "Affine;BSpline" TRUE "0.0;0.01;0.1;0.1;0.1;0.1" )
-ADD_GPU_RESAMPLE_TEST( BSpline "Affine;BSpline" TRUE "0.0;0.01;0.2;0.1;0.2;0.1" )
+    # Combo with multiple transforms
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} NearestNeighbor "Affine;BSpline" TRUE "0.0;0.0;0.1;0.3;0.4;0.7" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} Linear "Affine;BSpline" TRUE "0.0;0.01;0.1;0.1;0.1;0.1" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} BSpline "Affine;BSpline" TRUE "0.0;0.01;0.2;0.1;0.2;0.1" )
 
-ADD_GPU_RESAMPLE_TEST( NearestNeighbor "Translation;Affine;BSpline;Euler;Similarity" TRUE "0.0;0.0;1.1;0.5;0.7;1.0" )
-ADD_GPU_RESAMPLE_TEST( Linear "Translation;Affine;BSpline;Euler;Similarity" TRUE "0.0;0.01;0.1;0.1;0.1;0.1" )
-ADD_GPU_RESAMPLE_TEST( BSpline "Translation;Affine;BSpline;Euler;Similarity" TRUE "0.0;0.02;0.2;0.1;0.2;0.1" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} NearestNeighbor "Translation;Affine;BSpline;Euler;Similarity" TRUE "0.0;0.0;1.1;0.5;0.7;1.0" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} Linear "Translation;Affine;BSpline;Euler;Similarity" TRUE "0.0;0.01;0.1;0.1;0.1;0.1" )
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} BSpline "Translation;Affine;BSpline;Euler;Similarity" TRUE "0.0;0.02;0.2;0.1;0.2;0.1" )
 
-# Combo with multiple transforms of the same type
-ADD_GPU_RESAMPLE_TEST( BSpline "Translation;Translation;BSpline;BSpline;BSpline" TRUE "0.0;0.02;0.2;0.1;0.2;0.1" )
-
+    # Combo with multiple transforms of the same type
+    ADD_GPU_RESAMPLE_TEST( ${TEST_NAME} BSpline "Translation;Translation;BSpline;BSpline;BSpline" TRUE "0.0;0.02;0.2;0.1;0.2;0.1" )
+endforeach()
